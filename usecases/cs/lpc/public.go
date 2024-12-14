@@ -266,6 +266,39 @@ func (e *LPC) SetFailsafeDurationMinimum(duration time.Duration, changeable bool
 	return dc.UpdateKeyValueDataForFilter(data, nil, filter)
 }
 
+// return the currently pending incoming failsafe consumption write limits
+func (e *LPC) PendingFailsafeConsumptionLimits() map[model.MsgCounterType]model.DeviceConfigurationKeyValueDataType {
+	result := make(map[model.MsgCounterType]model.DeviceConfigurationKeyValueDataType)
+
+	e.pendingFailsafeLimitMux.Lock()
+	defer e.pendingFailsafeLimitMux.Unlock()
+
+	for key, msg := range e.pendingFailsafeLimits {
+		// The existance of this value is checked when it is added to the pendingFailsafeLimits map therefore we do not need to check it again
+		result[key] = msg.Cmd.DeviceConfigurationKeyValueListData.DeviceConfigurationKeyValueData[0]
+	}
+
+	return result
+}
+
+// accept or deny an incoming failsafe consumption write limit
+//
+// use PendingFailsafeConusmptionLimits to get the list of currently pending requests
+func (e *LPC) ApproveOrDenyFailsafeConsumptionLimit(msgCounter model.MsgCounterType, approve bool, reason string) {
+	e.pendingFailsafeLimitMux.Lock()
+	defer e.pendingFailsafeLimitMux.Unlock()
+
+	msg, ok := e.pendingFailsafeLimits[msgCounter]
+	if !ok {
+		// no pending limit for this msgCounter, this is a caller error
+		return
+	}
+
+	e.approveOrDenyFailsafeConsumptionLimit(msg, approve, reason)
+
+	delete(e.pendingFailsafeLimits, msgCounter)
+}
+
 // Scenario 3
 
 // start sending heartbeat from the local entity supporting this usecase

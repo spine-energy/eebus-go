@@ -21,6 +21,9 @@ type LPC struct {
 	pendingMux    sync.Mutex
 	pendingLimits map[model.MsgCounterType]*spineapi.Message
 
+	pendingFailsafeLimitMux		sync.Mutex
+	pendingFailsafeLimits		map[model.MsgCounterType]*spineapi.Message
+
 	heartbeatDiag *features.DeviceDiagnosis
 
 	heartbeatKeoWorkaround bool // required because KEO Stack uses multiple identical entities for the same functionality, and it is not clear which to use
@@ -76,6 +79,7 @@ func NewLPC(localEntity spineapi.EntityLocalInterface, eventCB api.EntityEventCa
 	uc := &LPC{
 		UseCaseBase:   usecase,
 		pendingLimits: make(map[model.MsgCounterType]*spineapi.Message),
+		pendingFailsafeLimits: make(map[model.MsgCounterType]*spineapi.Message),
 	}
 
 	_ = spine.Events.Subscribe(uc)
@@ -172,6 +176,66 @@ func (e *LPC) loadControlWriteCB(msg *spineapi.Message) {
 	go e.approveOrDenyConsumptionLimit(msg, true, "")
 }
 
+func (e *LPC) approveOrDenyFailsafeConsumptionLimit(msg *spineapi.Message, approve bool, reason string) {
+	f := e.LocalEntity.FeatureOfTypeAndRole(model.FeatureTypeTypeDeviceConfiguration, model.RoleTypeServer)
+
+	result := model.ErrorType{
+		ErrorNumber: model.ErrorNumberType(0),
+	}
+
+	if !approve {
+		result.ErrorNumber = model.ErrorNumberType(7)
+		result.Description = util.Ptr(model.DescriptionType(reason))
+	}
+	f.ApproveOrDenyWrite(msg, result)
+}
+
+// callback invoked on incoming write messages to this
+// DeviceConfiguration server feature.
+// the implementation only considers write messages for this use case and
+// approves all others
+func (e *LPC) deviceConfigurationWriteCB(msg *spineapi.Message) {
+	if msg.RequestHeader == nil || msg.RequestHeader.MsgCounter == nil ||
+	msg.Cmd.DeviceConfigurationKeyValueListData  == nil {
+		logging.Log().Debug("LPC deviceConfigurationWriteCB: invalid message")
+		return
+	}
+
+	data := msg.Cmd.DeviceConfigurationKeyValueListData
+
+	if len(data.DeviceConfigurationKeyValueData) == 0 || data.DeviceConfigurationKeyValueData[0].KeyId == nil {
+			logging.Log().Debug("LPC deviceConfigurationWriteCB: no data")
+			return
+		}
+
+	dcs, err := server.NewDeviceConfiguration(e.LocalEntity)
+	if err != nil {
+		return
+	}
+
+	description, err := dcs.GetKeyValueDescriptionFoKeyId(*data.DeviceConfigurationKeyValueData[0].KeyId)
+	if description == nil || err != nil {
+		logging.Log().Debug("LPC deviceConfigurationWriteCB: no device configuration for KeyID %d found on this usecase, possibly write message for other usecase")
+		// if no description is found this write request is presumably for another usecase so we accept it
+		go e.approveOrDenyFailsafeConsumptionLimit(msg, true, "")
+		return
+	}
+
+	switch *description.KeyName {
+	case model.DeviceConfigurationKeyNameTypeFailsafeConsumptionActivePowerLimit:
+		e.pendingFailsafeLimitMux.Lock()
+		if _, ok := e.pendingFailsafeLimits[*msg.RequestHeader.MsgCounter]; !ok {
+			e.pendingFailsafeLimits[*msg.RequestHeader.MsgCounter] = msg
+			e.pendingFailsafeLimitMux.Unlock()
+			e.EventCB(msg.DeviceRemote.Ski(), msg.DeviceRemote, msg.EntityRemote, WriteApprovalRequired)
+			return
+		}
+	default:
+		//approve because this is no request for the device configuration key this callback is responsible for
+		go e.approveOrDenyFailsafeConsumptionLimit(msg, true, "")
+	}
+}	
+
 func (e *LPC) AddFeatures() {
 	// client features
 	_ = e.LocalEntity.GetOrAddFeature(model.FeatureTypeTypeDeviceDiagnosis, model.RoleTypeClient)
@@ -209,7 +273,8 @@ func (e *LPC) AddFeatures() {
 	f = e.LocalEntity.GetOrAddFeature(model.FeatureTypeTypeDeviceConfiguration, model.RoleTypeServer)
 	f.AddFunctionType(model.FunctionTypeDeviceConfigurationKeyValueDescriptionListData, true, false)
 	f.AddFunctionType(model.FunctionTypeDeviceConfigurationKeyValueListData, true, true)
-
+	_ = f.AddWriteApprovalCallback(e.deviceConfigurationWriteCB)
+	
 	if dcs, err := server.NewDeviceConfiguration(e.LocalEntity); err == nil {
 		dcs.AddKeyValueDescription(
 			model.DeviceConfigurationKeyValueDescriptionDataType{

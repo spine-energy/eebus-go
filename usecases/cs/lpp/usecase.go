@@ -2,6 +2,7 @@ package lpp
 
 import (
 	"sync"
+	"time"
 
 	"github.com/enbility/eebus-go/api"
 	features "github.com/enbility/eebus-go/features/client"
@@ -21,8 +22,8 @@ type LPP struct {
 	pendingMux    sync.Mutex
 	pendingLimits map[model.MsgCounterType]*spineapi.Message
 
-	pendingFailsafeLimitMux		sync.Mutex
-	pendingFailsafeLimits		map[model.MsgCounterType]*spineapi.Message
+	pendingDeviceConfigMux		sync.Mutex
+	pendingDeviceConfigs		map[model.MsgCounterType]*ucapi.DeviceConfigurations
 
 	heartbeatDiag *features.DeviceDiagnosis
 
@@ -78,7 +79,7 @@ func NewLPP(localEntity spineapi.EntityLocalInterface, eventCB api.EntityEventCa
 	uc := &LPP{
 		UseCaseBase:   usecase,
 		pendingLimits: make(map[model.MsgCounterType]*spineapi.Message),
-		pendingFailsafeLimits: make(map[model.MsgCounterType]*spineapi.Message),
+		pendingDeviceConfigs: make(map[model.MsgCounterType]*ucapi.DeviceConfigurations),
 	}
 
 	_ = spine.Events.Subscribe(uc)
@@ -176,7 +177,7 @@ func (e *LPP) loadControlWriteCB(msg *spineapi.Message) {
 	go e.approveOrDenyProductionLimit(msg, true, "")
 }
 
-func (e *LPP) approveOrDenyFailsafeProductionLimit(msg *spineapi.Message, approve bool, reason string) {
+func (e *LPP) approveOrDenyDeviceConfiguration(msg *spineapi.Message, approve bool, reason string) {
 	f := e.LocalEntity.FeatureOfTypeAndRole(model.FeatureTypeTypeDeviceConfiguration, model.RoleTypeServer)
 
 	result := model.ErrorType{
@@ -187,6 +188,7 @@ func (e *LPP) approveOrDenyFailsafeProductionLimit(msg *spineapi.Message, approv
 		result.ErrorNumber = model.ErrorNumberType(7)
 		result.Description = util.Ptr(model.DescriptionType(reason))
 	}
+
 	f.ApproveOrDenyWrite(msg, result)
 }
 
@@ -213,28 +215,50 @@ func (e *LPP) deviceConfigurationWriteCB(msg *spineapi.Message) {
 		return
 	}
 
-	description, err := dcs.GetKeyValueDescriptionFoKeyId(*data.DeviceConfigurationKeyValueData[0].KeyId)
-	if description == nil || err != nil {
-		logging.Log().Debug("LPP deviceConfigurationWriteCB: no device configuration for KeyID %d found on this usecase, possibly write message for other usecase")
-		// if no description is found this write request is presumably for another usecase so we accept it
-		go e.approveOrDenyFailsafeProductionLimit(msg, true, "")
-		return
+	var failsafeLimit *float64 = nil
+	var failsafeDuration *time.Duration = nil
+	for _, deviceKeyValueData := range data.DeviceConfigurationKeyValueData {
+
+		description, err := dcs.GetKeyValueDescriptionFoKeyId(*deviceKeyValueData.KeyId)
+		if description == nil || err != nil {
+			logging.Log().Debug("LPP deviceConfigurationWriteCB: no device configuration for KeyID %d found on this usecase, possibly write message for other usecase")
+			// if no description is found this write request is presumably for another usecase
+			continue
+		}
+
+		// We only care about new values for either FailsafeProductionActivePowerLimit or FailsafeDurationMinimum, all other keys are ignored
+		switch *description.KeyName {
+		case model.DeviceConfigurationKeyNameTypeFailsafeProductionActivePowerLimit:
+			value := deviceKeyValueData.Value.ScaledNumber.GetValue()
+			failsafeLimit = &value
+		case model.DeviceConfigurationKeyNameTypeFailsafeDurationMinimum:
+			value, err := deviceKeyValueData.Value.Duration.GetTimeDuration()
+			if err == nil {
+				failsafeDuration = &value
+			} else {
+				logging.Log().Debug("LPP deviceConfigurationWriteCB: received invalid or no value as duration while trying to set FailsafeDurationMinimum")
+			}
+		}	
 	}
 
-	switch *description.KeyName {
-	case model.DeviceConfigurationKeyNameTypeFailsafeProductionActivePowerLimit:
-		e.pendingFailsafeLimitMux.Lock()
-		if _, ok := e.pendingFailsafeLimits[*msg.RequestHeader.MsgCounter]; !ok {
-			e.pendingFailsafeLimits[*msg.RequestHeader.MsgCounter] = msg
-			e.pendingFailsafeLimitMux.Unlock()
+	if failsafeDuration != nil || failsafeLimit != nil {
+		e.pendingDeviceConfigMux.Lock()
+		if _, ok := e.pendingDeviceConfigs[*msg.RequestHeader.MsgCounter]; !ok {
+			e.pendingDeviceConfigs[*msg.RequestHeader.MsgCounter] = &ucapi.DeviceConfigurations{
+				FailsafeLimit: failsafeLimit,
+				FailsafeDuration: failsafeDuration,
+				Msg: msg,
+			}
+			e.pendingDeviceConfigMux.Unlock()
 			e.EventCB(msg.DeviceRemote.Ski(), msg.DeviceRemote, msg.EntityRemote, WriteApprovalRequired)
 			return
 		}
-	default:
-		//approve because this is no request for the device configuration key this callback is responsible for
-		go e.approveOrDenyFailsafeProductionLimit(msg, true, "")
+		e.pendingDeviceConfigMux.Unlock()
+	} else {
+		// As neither a failsafe duration nor a failsafe limit were set this message does not pertain to this callback so we accept
+		e.approveOrDenyDeviceConfiguration(msg, true, "")
 	}
-}	
+}		
 
 func (e *LPP) AddFeatures() {
 	// client features

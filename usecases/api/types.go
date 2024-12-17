@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/enbility/spine-go/model"
+	spineapi "github.com/enbility/spine-go/api"
 )
 
 type EVChargeStateType string
@@ -165,4 +166,11 @@ type IncentiveTariffDescription struct {
 type DurationSlotValue struct {
 	Duration time.Duration // Duration of this slot
 	Value    float64       // Energy Cost or Power Limit
+}
+
+// Contains info on device configurations trying to be set via a write call on device configuration feature
+type DeviceConfigurations struct {
+	FailsafeLimit 		*float64
+	FailsafeDuration 	*time.Duration
+	Msg 				*spineapi.Message
 }

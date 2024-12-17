@@ -152,16 +152,23 @@ func (h *hems) OnLPCEvent(ski string, device spineapi.DeviceRemoteInterface, ent
 	case cslpc.WriteApprovalRequired:
 		// get pending writes
 		pendingWrites := h.uccslpc.PendingConsumptionLimits()
-		pendingFailsafeWrites := h.uccslpc.PendingFailsafeConsumptionLimits()
+		pendingDeviceConfigWrites := h.uccslpc.PendingDeviceConfigurations()
 
 		// approve any write
 		for msgCounter, write := range pendingWrites {
 			fmt.Println("Approving LPC limit write with msgCounter", msgCounter, "and limit", write.Value, "W")
 			h.uccslpc.ApproveOrDenyConsumptionLimit(msgCounter, true, "")
 		}
-		for msgCounter, write := range pendingFailsafeWrites {
-			fmt.Println("Approving LPC failsafe limit write with msgCounter", msgCounter, "and limit", write.Value.ScaledNumber.GetValue())
-			h.uccslpc.ApproveOrDenyFailsafeConsumptionLimit(msgCounter, true, "")
+		for msgCounter, config := range pendingDeviceConfigWrites {
+			fmt.Print("Approving LPC device config write with msgCounter ", msgCounter)
+			if config.FailsafeDuration != nil {
+				fmt.Printf(" and FailsafeDurationMinimum %s", *config.FailsafeDuration)
+			}
+			if config.FailsafeLimit != nil {
+				fmt.Printf(" and FailsafeConsumptionLimit %f", *config.FailsafeLimit)
+			}
+			fmt.Print("\n")
+			h.uccslpc.ApproveOrDenyDeviceConfiguration(msgCounter, true, "")
 		}
 	case cslpc.DataUpdateLimit:
 		if currentLimit, err := h.uccslpc.ConsumptionLimit(); err == nil {
@@ -177,16 +184,23 @@ func (h *hems) OnLPPEvent(ski string, device spineapi.DeviceRemoteInterface, ent
 	case cslpp.WriteApprovalRequired:
 		// get pending writes
 		pendingWrites := h.uccslpp.PendingProductionLimits()
-		pendingFailsafeWrites := h.uccslpp.PendingFailsafeProductionLimits()
+		pendingDeviceConfigWrites := h.uccslpp.PendingDeviceConfigurations()
 		
 		// approve any write
 		for msgCounter, write := range pendingWrites {
 			fmt.Println("Approving LPP limit write with msgCounter", msgCounter, "and limit", write.Value, "W")
 			h.uccslpp.ApproveOrDenyProductionLimit(msgCounter, true, "")
 		}
-		for msgCounter, write := range pendingFailsafeWrites {
-			fmt.Println("Approving LPP failsafe limit write with msgCounter", msgCounter, "and limit", write.Value.ScaledNumber.GetValue())
-			h.uccslpp.ApproveOrDenyFailsafeProductionLimit(msgCounter, true, "")
+		for msgCounter, config := range pendingDeviceConfigWrites {
+			fmt.Print("Approving LPP device config write with msgCounter ", msgCounter)
+			if config.FailsafeDuration != nil {
+				fmt.Printf(" and FailsafeDurationMinimum %s", *config.FailsafeDuration)
+			}
+			if config.FailsafeLimit != nil {
+				fmt.Printf(" and FailsafeProductionLimit %f", *config.FailsafeLimit)
+			}
+			fmt.Print("\n")
+			h.uccslpp.ApproveOrDenyDeviceConfiguration(msgCounter, true, "")
 		}
 	case cslpp.DataUpdateLimit:
 		if currentLimit, err := h.uccslpp.ProductionLimit(); err == nil {

@@ -72,16 +72,16 @@ type CsLPPInterface interface {
 	//   - changeable: boolean if the client service can change this value
 	SetFailsafeDurationMinimum(duration time.Duration, changeable bool) (resultErr error)
 
-	// return the currently pending incoming failsafe production write limits
-	PendingFailsafeProductionLimits() map[model.MsgCounterType]model.DeviceConfigurationKeyValueDataType
+	// return the currently pending incoming device configuration writes
+	PendingDeviceConfigurations() map[model.MsgCounterType]*DeviceConfigurations
 
-	// accept or deny an incoming failsafe production write limit
+	// accept or deny an incoming device configuration writes
 	//
 	// parameters:
 	//  - msg: the incoming write message
 	//  - approve: if the write limit for msg should be approved or not
 	//  - reason: the reason why the approval is denied, otherwise an empty string
-	ApproveOrDenyFailsafeProductionLimit(msgCounter model.MsgCounterType, approve bool, reason string)
+	ApproveOrDenyDeviceConfiguration(msgCounter model.MsgCounterType, approve bool, reason string)
 
 	// Scenario 3
 

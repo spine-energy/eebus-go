@@ -266,37 +266,30 @@ func (e *LPC) SetFailsafeDurationMinimum(duration time.Duration, changeable bool
 	return dc.UpdateKeyValueDataForFilter(data, nil, filter)
 }
 
-// return the currently pending incoming failsafe consumption write limits
-func (e *LPC) PendingFailsafeConsumptionLimits() map[model.MsgCounterType]model.DeviceConfigurationKeyValueDataType {
-	result := make(map[model.MsgCounterType]model.DeviceConfigurationKeyValueDataType)
-
-	e.pendingFailsafeLimitMux.Lock()
-	defer e.pendingFailsafeLimitMux.Unlock()
-
-	for key, msg := range e.pendingFailsafeLimits {
-		// The existance of this value is checked when it is added to the pendingFailsafeLimits map therefore we do not need to check it again
-		result[key] = msg.Cmd.DeviceConfigurationKeyValueListData.DeviceConfigurationKeyValueData[0]
-	}
-
-	return result
+// return the currently pending incoming failsafe consumption limit writes
+func (e *LPC) PendingDeviceConfigurations() map[model.MsgCounterType]*ucapi.DeviceConfigurations {
+	e.pendingDeviceConfigMux.Lock()
+	defer e.pendingDeviceConfigMux.Unlock()
+	
+	return e.pendingDeviceConfigs
 }
 
-// accept or deny an incoming failsafe consumption write limit
+// accept or deny an incoming device configuration write
 //
-// use PendingFailsafeConusmptionLimits to get the list of currently pending requests
-func (e *LPC) ApproveOrDenyFailsafeConsumptionLimit(msgCounter model.MsgCounterType, approve bool, reason string) {
-	e.pendingFailsafeLimitMux.Lock()
-	defer e.pendingFailsafeLimitMux.Unlock()
+// use PendingDeviceConfigurations to get the list of currently pending requests
+func (e *LPC) ApproveOrDenyDeviceConfiguration(msgCounter model.MsgCounterType, approve bool, reason string) {
+	e.pendingDeviceConfigMux.Lock()
+	defer e.pendingDeviceConfigMux.Unlock()
 
-	msg, ok := e.pendingFailsafeLimits[msgCounter]
+	config, ok := e.pendingDeviceConfigs[msgCounter]
 	if !ok {
 		// no pending limit for this msgCounter, this is a caller error
 		return
 	}
 
-	e.approveOrDenyFailsafeConsumptionLimit(msg, approve, reason)
+	e.approveOrDenyDeviceConfiguration(config.Msg, approve, reason)
 
-	delete(e.pendingFailsafeLimits, msgCounter)
+	delete(e.pendingDeviceConfigs, msgCounter)
 }
 
 // Scenario 3

@@ -210,7 +210,7 @@ func (e *LPP) deviceConfigurationWriteCB(msg *spineapi.Message) {
 			return
 		}
 
-	dcs, err := server.NewDeviceConfiguration(e.LocalEntity)
+	dc, err := server.NewDeviceConfiguration(e.LocalEntity)
 	if err != nil {
 		return
 	}
@@ -219,10 +219,9 @@ func (e *LPP) deviceConfigurationWriteCB(msg *spineapi.Message) {
 	var failsafeDuration *time.Duration = nil
 	for _, deviceKeyValueData := range data.DeviceConfigurationKeyValueData {
 
-		description, err := dcs.GetKeyValueDescriptionFoKeyId(*deviceKeyValueData.KeyId)
+		description, err := dc.GetKeyValueDescriptionFoKeyId(*deviceKeyValueData.KeyId)
 		if description == nil || err != nil {
-			logging.Log().Debug("LPP deviceConfigurationWriteCB: no device configuration for KeyID %d found on this usecase, possibly write message for other usecase")
-			// if no description is found this write request is presumably for another usecase
+			logging.Log().Debug("LPP deviceConfigurationWriteCB: no device configuration for KeyID %d found")
 			continue
 		}
 
@@ -241,6 +240,7 @@ func (e *LPP) deviceConfigurationWriteCB(msg *spineapi.Message) {
 		}	
 	}
 
+	// Only ask for write approval if at least one of the configurations we care about is trying to be set
 	if failsafeDuration != nil || failsafeLimit != nil {
 		e.pendingDeviceConfigMux.Lock()
 		if _, ok := e.pendingDeviceConfigs[*msg.RequestHeader.MsgCounter]; !ok {
@@ -255,7 +255,7 @@ func (e *LPP) deviceConfigurationWriteCB(msg *spineapi.Message) {
 		}
 		e.pendingDeviceConfigMux.Unlock()
 	} else {
-		// As neither a failsafe duration nor a failsafe limit were set this message does not pertain to this callback so we accept
+		// If neither a failsafe duration nor a failsafe limit were set this message does not pertain to this callback so we accept
 		e.approveOrDenyDeviceConfiguration(msg, true, "")
 	}
 }		

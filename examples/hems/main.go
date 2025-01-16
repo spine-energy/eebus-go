@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/enbility/eebus-go/api"
+	"github.com/enbility/eebus-go/features/server"
 	"github.com/enbility/eebus-go/service"
 	ucapi "github.com/enbility/eebus-go/usecases/api"
 	"github.com/enbility/eebus-go/usecases/cem/vabd"
@@ -159,13 +160,23 @@ func (h *hems) OnLPCEvent(ski string, device spineapi.DeviceRemoteInterface, ent
 			fmt.Println("Approving LPC limit write with msgCounter", msgCounter, "and limit", write.Value, "W")
 			h.uccslpc.ApproveOrDenyConsumptionLimit(msgCounter, true, "")
 		}
-		for msgCounter, config := range pendingDeviceConfigWrites {
-			fmt.Print("Approving LPC device config write with msgCounter ", msgCounter)
-			if config.FailsafeDuration != nil {
-				fmt.Printf(" and FailsafeDurationMinimum %s", *config.FailsafeDuration)
+		for msgCounter, configs := range pendingDeviceConfigWrites {
+			localEntity := h.myService.LocalDevice().EntityForType(model.EntityTypeTypeCEM)
+			dc, err := server.NewDeviceConfiguration(localEntity)
+			if err != nil {
+				fmt.Println("Not approving LPC device configuration writes because of error:")
+				fmt.Println(err)
+				return
 			}
-			if config.FailsafeLimit != nil {
-				fmt.Printf(" and FailsafeConsumptionLimit %f", *config.FailsafeLimit)
+			fmt.Printf("Approving LPC device config write with msgCounter %d ", msgCounter)
+			for _, config := range(configs) {
+				description, err := dc.GetKeyValueDescriptionFoKeyId(*config.KeyId)
+				if description == nil || err != nil {
+					fmt.Printf("LPC approving device configuation writes: no device configuration for KeyID %d found\n", *config.KeyId)
+					continue
+				}
+
+				fmt.Printf("including %s ", *description.KeyName)
 			}
 			fmt.Print("\n")
 			h.uccslpc.ApproveOrDenyDeviceConfiguration(msgCounter, true, "")
@@ -191,16 +202,26 @@ func (h *hems) OnLPPEvent(ski string, device spineapi.DeviceRemoteInterface, ent
 			fmt.Println("Approving LPP limit write with msgCounter", msgCounter, "and limit", write.Value, "W")
 			h.uccslpp.ApproveOrDenyProductionLimit(msgCounter, true, "")
 		}
-		for msgCounter, config := range pendingDeviceConfigWrites {
-			fmt.Print("Approving LPP device config write with msgCounter ", msgCounter)
-			if config.FailsafeDuration != nil {
-				fmt.Printf(" and FailsafeDurationMinimum %s", *config.FailsafeDuration)
+		for msgCounter, configs := range pendingDeviceConfigWrites {
+			localEntity := h.myService.LocalDevice().EntityForType(model.EntityTypeTypeCEM)
+			dc, err := server.NewDeviceConfiguration(localEntity)
+			if err != nil {
+				fmt.Println("Not approving LPC device configuration writes because of error:")
+				fmt.Println(err)
+				return
 			}
-			if config.FailsafeLimit != nil {
-				fmt.Printf(" and FailsafeProductionLimit %f", *config.FailsafeLimit)
+
+			fmt.Printf("Approving LPP device config write with msgCounter %d ", msgCounter)
+			for _, config := range(configs) {
+				description, err := dc.GetKeyValueDescriptionFoKeyId(*config.KeyId)
+				if description == nil || err != nil {
+					fmt.Printf("LPP approving device configuation writes: no device configuration for KeyID %d found\n", *config.KeyId)
+					continue
+				}
+				fmt.Printf("including %s  ", *description.KeyName)
 			}
 			fmt.Print("\n")
-			h.uccslpp.ApproveOrDenyDeviceConfiguration(msgCounter, true, "")
+			h.uccslpc.ApproveOrDenyDeviceConfiguration(msgCounter, true, "")
 		}
 	case cslpp.DataUpdateLimit:
 		if currentLimit, err := h.uccslpp.ProductionLimit(); err == nil {

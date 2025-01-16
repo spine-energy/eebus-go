@@ -267,11 +267,24 @@ func (e *LPC) SetFailsafeDurationMinimum(duration time.Duration, changeable bool
 }
 
 // return the currently pending incoming failsafe consumption limit writes
-func (e *LPC) PendingDeviceConfigurations() map[model.MsgCounterType]*ucapi.DeviceConfigurations {
+func (e *LPC) PendingDeviceConfigurations() map[model.MsgCounterType][]model.DeviceConfigurationKeyValueDataType {
+	result := make(map[model.MsgCounterType][]model.DeviceConfigurationKeyValueDataType)
+	
 	e.pendingDeviceConfigMux.Lock()
 	defer e.pendingDeviceConfigMux.Unlock()
-	
-	return e.pendingDeviceConfigs
+
+	for msgCounter, msg := range e.pendingDeviceConfigs {
+		data := msg.Cmd.DeviceConfigurationKeyValueListData
+		for _, configKeyValueData := range data.DeviceConfigurationKeyValueData {
+			if _, exists := result[msgCounter]; exists {
+				result[msgCounter] = append(result[msgCounter], configKeyValueData)
+			} else {
+				result[msgCounter] = []model.DeviceConfigurationKeyValueDataType{configKeyValueData}
+			}
+		}
+	}
+
+	return result
 }
 
 // accept or deny an incoming device configuration write
@@ -281,14 +294,13 @@ func (e *LPC) ApproveOrDenyDeviceConfiguration(msgCounter model.MsgCounterType, 
 	e.pendingDeviceConfigMux.Lock()
 	defer e.pendingDeviceConfigMux.Unlock()
 
-	config, ok := e.pendingDeviceConfigs[msgCounter]
+	msg, ok := e.pendingDeviceConfigs[msgCounter]
 	if !ok {
 		// no pending limit for this msgCounter, this is a caller error
 		return
 	}
 
-	e.approveOrDenyDeviceConfiguration(config.Msg, approve, reason)
-
+	e.approveOrDenyDeviceConfiguration(msg, approve, reason)
 	delete(e.pendingDeviceConfigs, msgCounter)
 }
 

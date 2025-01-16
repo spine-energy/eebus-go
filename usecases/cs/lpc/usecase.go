@@ -2,7 +2,6 @@ package lpc
 
 import (
 	"sync"
-	"time"
 
 	"github.com/enbility/eebus-go/api"
 	features "github.com/enbility/eebus-go/features/client"
@@ -23,7 +22,7 @@ type LPC struct {
 	pendingLimits map[model.MsgCounterType]*spineapi.Message
 
 	pendingDeviceConfigMux		sync.Mutex
-	pendingDeviceConfigs		map[model.MsgCounterType]*ucapi.DeviceConfigurations
+	pendingDeviceConfigs		map[model.MsgCounterType]*spineapi.Message
 
 	heartbeatDiag *features.DeviceDiagnosis
 
@@ -80,7 +79,7 @@ func NewLPC(localEntity spineapi.EntityLocalInterface, eventCB api.EntityEventCa
 	uc := &LPC{
 		UseCaseBase:   usecase,
 		pendingLimits: make(map[model.MsgCounterType]*spineapi.Message),
-		pendingDeviceConfigs: make(map[model.MsgCounterType]*ucapi.DeviceConfigurations),
+		pendingDeviceConfigs: make(map[model.MsgCounterType]*spineapi.Message),
 	}
 
 	_ = spine.Events.Subscribe(uc)
@@ -215,49 +214,32 @@ func (e *LPC) deviceConfigurationWriteCB(msg *spineapi.Message) {
 		return
 	}
 
-	var failsafeLimit *float64 = nil
-	var failsafeDuration *time.Duration = nil
+	configsToApprove := map[model.DeviceConfigurationKeyNameType]struct{}{
+		model.DeviceConfigurationKeyNameTypeFailsafeConsumptionActivePowerLimit: {},
+		model.DeviceConfigurationKeyNameTypeFailsafeDurationMinimum: {},
+	}
 	for _, deviceKeyValueData := range data.DeviceConfigurationKeyValueData {
-
 		description, err := dc.GetKeyValueDescriptionFoKeyId(*deviceKeyValueData.KeyId)
 		if description == nil || err != nil {
 			logging.Log().Debug("LPC deviceConfigurationWriteCB: no device configuration for KeyID %d found")
 			continue
 		}
 
-		// We only care about new values for either FailsafeConsumptionActivePowerLimit or FailsafeDurationMinimum, all other keys are ignored
-		switch *description.KeyName {
-		case model.DeviceConfigurationKeyNameTypeFailsafeConsumptionActivePowerLimit:
-			value := deviceKeyValueData.Value.ScaledNumber.GetValue()
-			failsafeLimit = &value
-		case model.DeviceConfigurationKeyNameTypeFailsafeDurationMinimum:
-			value, err := deviceKeyValueData.Value.Duration.GetTimeDuration()
-			if err == nil {
-				failsafeDuration = &value
-			} else {
-				logging.Log().Debug("LPC deviceConfigurationWriteCB: received invalid or no value as duration while trying to set FailsafeDurationMinimum")
-			}
-		}	
-	}
-
-	// Only ask for write approval if at least one of the configurations we care about is trying to be set
-	if failsafeDuration != nil || failsafeLimit != nil {
-		e.pendingDeviceConfigMux.Lock()
-		if _, ok := e.pendingDeviceConfigs[*msg.RequestHeader.MsgCounter]; !ok {
-			e.pendingDeviceConfigs[*msg.RequestHeader.MsgCounter] = &ucapi.DeviceConfigurations{
-				FailsafeLimit: failsafeLimit,
-				FailsafeDuration: failsafeDuration,
-				Msg: msg,
+		// Only ask for write approval if at least one of the configurations we care about is trying to be set
+		if _, exists := configsToApprove[*description.KeyName]; exists {
+			e.pendingDeviceConfigMux.Lock()
+			if _, exists := e.pendingDeviceConfigs[*msg.RequestHeader.MsgCounter]; !exists {
+				e.pendingDeviceConfigs[*msg.RequestHeader.MsgCounter] = msg
+				e.pendingDeviceConfigMux.Unlock()
+				e.EventCB(msg.DeviceRemote.Ski(), msg.DeviceRemote, msg.EntityRemote, WriteApprovalRequired)
+				return
 			}
 			e.pendingDeviceConfigMux.Unlock()
-			e.EventCB(msg.DeviceRemote.Ski(), msg.DeviceRemote, msg.EntityRemote, WriteApprovalRequired)
-			return
-		}
-		e.pendingDeviceConfigMux.Unlock()
-	} else {
-		// If neither a failsafe duration nor a failsafe limit were set this message does not pertain to this callback so we accept
-		e.approveOrDenyDeviceConfiguration(msg, true, "")
+		} 
 	}
+
+	// If neither a failsafe duration nor a failsafe limit were set this message does not pertain to this callback so we accept
+	e.approveOrDenyDeviceConfiguration(msg, true, "")
 }	
 
 func (e *LPC) AddFeatures() {

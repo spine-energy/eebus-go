@@ -73,7 +73,7 @@ type CsLPPInterface interface {
 	SetFailsafeDurationMinimum(duration time.Duration, changeable bool) (resultErr error)
 
 	// return the currently pending incoming device configuration writes
-	PendingDeviceConfigurations() map[model.MsgCounterType]*DeviceConfigurations
+	PendingDeviceConfigurations() map[model.MsgCounterType][]model.DeviceConfigurationKeyValueDataType
 
 	// accept or deny an incoming device configuration writes
 	//

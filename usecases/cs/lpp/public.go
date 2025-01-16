@@ -268,23 +268,38 @@ func (e *LPP) SetFailsafeDurationMinimum(duration time.Duration, changeable bool
 }
 
 // return the currently pending incoming failsafe consumption limit writes
-func (e *LPP) PendingDeviceConfigurations() map[model.MsgCounterType][]model.DeviceConfigurationKeyValueDataType {
-	result := make(map[model.MsgCounterType][]model.DeviceConfigurationKeyValueDataType)
+func (e *LPP) PendingDeviceConfigurations() map[model.MsgCounterType][]ucapi.PendingDeviceConfiguration {
+	result := make(map[model.MsgCounterType][]ucapi.PendingDeviceConfiguration)
 	
 	e.pendingDeviceConfigMux.Lock()
 	defer e.pendingDeviceConfigMux.Unlock()
 
+	dc, err := server.NewDeviceConfiguration(e.LocalEntity)
+	if err != nil {
+		return result
+	}
+
 	for msgCounter, msg := range e.pendingDeviceConfigs {
 		data := msg.Cmd.DeviceConfigurationKeyValueListData
 		for _, configKeyValueData := range data.DeviceConfigurationKeyValueData {
-			if _, exists := result[msgCounter]; exists {
-				result[msgCounter] = append(result[msgCounter], configKeyValueData)
+			description, err := dc.GetKeyValueDescriptionFoKeyId(*configKeyValueData.KeyId)
+			if err != nil {
+				continue
+			}
+			
+			pendingConfigData := ucapi.PendingDeviceConfiguration{
+				Description: description,
+				Value: configKeyValueData.Value,
+				IsValueChangeable: configKeyValueData.IsValueChangeable,
+			}
+
+			if _, exists := result[msgCounter]; !exists {
+				result[msgCounter] = []ucapi.PendingDeviceConfiguration{pendingConfigData}
 			} else {
-				result[msgCounter] = []model.DeviceConfigurationKeyValueDataType{configKeyValueData}
+				result[msgCounter] = append(result[msgCounter], pendingConfigData)
 			}
 		}
 	}
-
 	return result
 }
 

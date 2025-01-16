@@ -166,3 +166,9 @@ type DurationSlotValue struct {
 	Duration time.Duration // Duration of this slot
 	Value    float64       // Energy Cost or Power Limit
 }
+
+type PendingDeviceConfiguration struct {
+	Description     	*model.DeviceConfigurationKeyValueDescriptionDataType     	`json:"description,omitempty"`
+	Value             	*model.DeviceConfigurationKeyValueValueType 				`json:"value,omitempty"`
+	IsValueChangeable 	*bool                                 						`json:"isValueChangeable,omitempty" eebus:"writecheck"`
+}

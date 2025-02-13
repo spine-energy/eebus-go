@@ -270,7 +270,7 @@ func (e *LPP) SetFailsafeDurationMinimum(duration time.Duration, changeable bool
 // return the currently pending incoming failsafe consumption limit writes
 func (e *LPP) PendingDeviceConfigurations() map[model.MsgCounterType][]ucapi.PendingDeviceConfiguration {
 	result := make(map[model.MsgCounterType][]ucapi.PendingDeviceConfiguration)
-	
+
 	e.pendingDeviceConfigMux.Lock()
 	defer e.pendingDeviceConfigMux.Unlock()
 
@@ -286,10 +286,10 @@ func (e *LPP) PendingDeviceConfigurations() map[model.MsgCounterType][]ucapi.Pen
 			if err != nil {
 				continue
 			}
-			
+
 			pendingConfigData := ucapi.PendingDeviceConfiguration{
-				Description: description,
-				Value: configKeyValueData.Value,
+				Description:       description,
+				Value:             configKeyValueData.Value,
 				IsValueChangeable: configKeyValueData.IsValueChangeable,
 			}
 

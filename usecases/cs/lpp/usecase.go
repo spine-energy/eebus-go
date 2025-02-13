@@ -1,6 +1,7 @@
 package lpp
 
 import (
+	"slices"
 	"sync"
 
 	"github.com/enbility/eebus-go/api"
@@ -21,8 +22,8 @@ type LPP struct {
 	pendingMux    sync.Mutex
 	pendingLimits map[model.MsgCounterType]*spineapi.Message
 
-	pendingDeviceConfigMux		sync.Mutex
-	pendingDeviceConfigs		map[model.MsgCounterType]*spineapi.Message
+	pendingDeviceConfigMux sync.Mutex
+	pendingDeviceConfigs   map[model.MsgCounterType]*spineapi.Message
 
 	heartbeatDiag *features.DeviceDiagnosis
 
@@ -76,8 +77,8 @@ func NewLPP(localEntity spineapi.EntityLocalInterface, eventCB api.EntityEventCa
 	)
 
 	uc := &LPP{
-		UseCaseBase:   usecase,
-		pendingLimits: make(map[model.MsgCounterType]*spineapi.Message),
+		UseCaseBase:          usecase,
+		pendingLimits:        make(map[model.MsgCounterType]*spineapi.Message),
 		pendingDeviceConfigs: make(map[model.MsgCounterType]*spineapi.Message),
 	}
 
@@ -197,28 +198,36 @@ func (e *LPP) approveOrDenyDeviceConfiguration(msg *spineapi.Message, approve bo
 // approves all others
 func (e *LPP) deviceConfigurationWriteCB(msg *spineapi.Message) {
 	if msg.RequestHeader == nil || msg.RequestHeader.MsgCounter == nil ||
-	msg.Cmd.DeviceConfigurationKeyValueListData  == nil {
+		msg.Cmd.DeviceConfigurationKeyValueListData == nil {
 		logging.Log().Debug("LPP deviceConfigurationWriteCB: invalid message")
 		return
 	}
 
 	data := msg.Cmd.DeviceConfigurationKeyValueListData
 
-	if len(data.DeviceConfigurationKeyValueData) == 0 || data.DeviceConfigurationKeyValueData[0].KeyId == nil {
-			logging.Log().Debug("LPP deviceConfigurationWriteCB: no data")
-			return
-		}
+	if data == nil || data.DeviceConfigurationKeyValueData == nil || len(data.DeviceConfigurationKeyValueData) == 0 {
+		logging.Log().Debug("LPP deviceConfigurationWriteCB: no data")
+		return
+	}
+
+	// all DeviceConfigurationKeyValueData must have keyId set as primary identifier
+	if slices.ContainsFunc(data.DeviceConfigurationKeyValueData, func(i model.DeviceConfigurationKeyValueDataType) bool {
+		return i.KeyId == nil
+	}) {
+		logging.Log().Debug("LPP deviceConfigurationWriteCB: invalid message")
+		return
+	}
 
 	dc, err := server.NewDeviceConfiguration(e.LocalEntity)
 	if err != nil {
 		return
 	}
+
 	configsToApprove := map[model.DeviceConfigurationKeyNameType]struct{}{
 		model.DeviceConfigurationKeyNameTypeFailsafeProductionActivePowerLimit: {},
-		model.DeviceConfigurationKeyNameTypeFailsafeDurationMinimum: {},
+		model.DeviceConfigurationKeyNameTypeFailsafeDurationMinimum:            {},
 	}
 	for _, deviceKeyValueData := range data.DeviceConfigurationKeyValueData {
-
 		description, err := dc.GetKeyValueDescriptionFoKeyId(*deviceKeyValueData.KeyId)
 		if description == nil || err != nil {
 			logging.Log().Debug("LPP deviceConfigurationWriteCB: no device configuration for KeyID %d found")
@@ -235,12 +244,12 @@ func (e *LPP) deviceConfigurationWriteCB(msg *spineapi.Message) {
 				return
 			}
 			e.pendingDeviceConfigMux.Unlock()
-		} 
+		}
 	}
 
 	// If neither a failsafe duration nor a failsafe limit were set this message does not pertain to this callback so we accept
-	e.approveOrDenyDeviceConfiguration(msg, true, "")
-}		
+	go e.approveOrDenyDeviceConfiguration(msg, true, "")
+}
 
 func (e *LPP) AddFeatures() {
 	// client features

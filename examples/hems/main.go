@@ -93,7 +93,7 @@ func (h *hems) run() {
 	configuration.SetAlternateIdentifier("Demo-HEMS-123456789")
 
 	h.myService = service.NewService(configuration, h)
-	//h.myService.SetLogging(h)
+	h.myService.SetLogging(h)
 
 	if err = h.myService.Setup(); err != nil {
 		fmt.Println(err)
@@ -161,7 +161,7 @@ func (h *hems) OnLPCEvent(ski string, device spineapi.DeviceRemoteInterface, ent
 		}
 		for msgCounter, configs := range pendingDeviceConfigWrites {
 			fmt.Printf("Approving LPC device config write with msgCounter %d for features: ", msgCounter)
-			for _, config := range(configs) {
+			for _, config := range configs {
 				fmt.Printf("%s ", *config.Description.KeyName)
 			}
 			fmt.Print("\n")
@@ -182,7 +182,7 @@ func (h *hems) OnLPPEvent(ski string, device spineapi.DeviceRemoteInterface, ent
 		// get pending writes
 		pendingWrites := h.uccslpp.PendingProductionLimits()
 		pendingDeviceConfigWrites := h.uccslpp.PendingDeviceConfigurations()
-		
+
 		// approve any write
 		for msgCounter, write := range pendingWrites {
 			fmt.Println("Approving LPP limit write with msgCounter", msgCounter, "and limit", write.Value, "W")
@@ -190,7 +190,7 @@ func (h *hems) OnLPPEvent(ski string, device spineapi.DeviceRemoteInterface, ent
 		}
 		for msgCounter, configs := range pendingDeviceConfigWrites {
 			fmt.Printf("Approving LPP device config write with msgCounter %d for features: ", msgCounter)
-			for _, config := range(configs) {
+			for _, config := range configs {
 				fmt.Printf("%s ", *config.Description.KeyName)
 			}
 			fmt.Print("\n")

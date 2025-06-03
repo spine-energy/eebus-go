@@ -249,7 +249,7 @@ func (s *Service) QRCodeText() string {
 // Sets the SKI as being paired
 // and connect it if paired and not currently being connected
 func (s *Service) RegisterRemoteSKI(ski string) {
-	s.connectionsHub.RegisterRemoteSKI(ski)
+	s.connectionsHub.RegisterRemoteSKI(ski, "")
 }
 
 // Sets the SKI as not being paired

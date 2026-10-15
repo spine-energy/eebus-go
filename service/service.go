@@ -4,6 +4,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"net"
 	"strconv"
 	"sync"
 
@@ -260,6 +261,24 @@ func (s *Service) SetAutoAccept(value bool) {
 
 func (s *Service) IsAutoAcceptEnabled() bool {
 	return s.localService.AutoAccept()
+}
+
+// Restrict the addresses announced via mDNS for the SHIP service to the given
+// IPs instead of all addresses of the host, e.g. for hosts with multiple
+// addresses of which remotes can only reach some.
+// An empty list restores the default.
+// Must be called after Setup(), requires an mDNS manager supporting it.
+func (s *Service) SetMdnsAnnounceAddresses(ips []net.IP) error {
+	if s.mdns == nil {
+		return errors.New("service not set up, call Setup() first")
+	}
+
+	setter, ok := s.mdns.(interface{ SetAnnounceAddresses([]net.IP) error })
+	if !ok {
+		return errors.New("mdns announce addresses not supported")
+	}
+
+	return setter.SetAnnounceAddresses(ips)
 }
 
 // Generate a QR code string.

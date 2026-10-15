@@ -3,6 +3,7 @@ package service
 import (
 	"crypto/tls"
 	"errors"
+	"net"
 	"testing"
 	"time"
 
@@ -412,4 +413,38 @@ func (s *ServiceSuite) Test_GetLocalCertificateFingerprint_Error() {
 	assert.NotNil(s.T(), err)
 	assert.Equal(s.T(), err.Error(), expectedError.Error())
 	assert.Empty(s.T(), fp)
+}
+
+// mdnsAddressSetter adds SetAnnounceAddresses to the mDNS mock
+type mdnsAddressSetter struct {
+	*shipmocks.MdnsInterface
+	ips []net.IP
+	err error
+}
+
+func (m *mdnsAddressSetter) SetAnnounceAddresses(ips []net.IP) error {
+	m.ips = ips
+	return m.err
+}
+
+func (s *ServiceSuite) Test_SetMdnsAnnounceAddresses() {
+	ips := []net.IP{net.ParseIP("192.168.1.2")}
+
+	err := s.sut.SetMdnsAnnounceAddresses(ips)
+	assert.NotNil(s.T(), err)
+
+	s.sut.mdns = s.mdns
+	err = s.sut.SetMdnsAnnounceAddresses(ips)
+	assert.NotNil(s.T(), err)
+
+	setter := &mdnsAddressSetter{MdnsInterface: s.mdns}
+	s.sut.mdns = setter
+	err = s.sut.SetMdnsAnnounceAddresses(ips)
+	assert.Nil(s.T(), err)
+	assert.Equal(s.T(), ips, setter.ips)
+
+	setter.err = errors.New("announce failed")
+	err = s.sut.SetMdnsAnnounceAddresses(nil)
+	assert.Equal(s.T(), setter.err, err)
+	assert.Nil(s.T(), setter.ips)
 }
